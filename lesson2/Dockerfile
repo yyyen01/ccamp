@@ -1,0 +1,5 @@
+FROM alpine
+ENV MY_SERVICE_PORT=9800
+ADD bin/amd64/lesson2 /lesson2
+EXPOSE 9800
+ENTRYPOINT /lesson2
