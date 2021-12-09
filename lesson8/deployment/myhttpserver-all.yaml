@@ -1,3 +1,12 @@
+#create configMap
+apiVersion: v1
+kind: ConfigMap
+data:
+  LOGLEVEL: "3"
+  PORT: "9090"
+  VERSION: 1.1.1
+
+---
 #create deployment
 apiVersion: apps/v1
 kind: Deployment

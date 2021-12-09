@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+    name: ha-ingress
+    annotations:
+        haproxy.org/path-rewrite: "/"
+        kubernetes.io/ingress.class: haproxy
+spec:
+    rules:
+    - http:
+        paths:
+        - path: /abc
+          pathType: Prefix
+          backend:
+            service:
+              name: myhttpserver-svc
+              port:
+                number: 9095
