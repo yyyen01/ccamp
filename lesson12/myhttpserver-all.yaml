@@ -1,0 +1,131 @@
+#create configMap
+apiVersion: v1
+kind: ConfigMap
+metadata:  
+  name: propmap
+data:
+  LOGLEVEL: "3"
+  PORT: "9090"
+  VERSION: 1.1.2
+
+---
+#create deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myhttpserver-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myhttpserver
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+      labels:
+        app: myhttpserver
+    spec:
+      containers:
+        - name: myhttpserver
+          image: yyyen01/myhttpserver:latest
+          #gracefully start up configuration
+          readinessProbe:
+            httpGet:
+            ### this probe will fail with 404 error code
+            ### only httpcode between 200-400 is retreated as success
+              path: /healthz
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              memory: 128Mi
+          livenessProbe:
+            exec:
+              command:
+                - ls
+                - /config
+            initialDelaySeconds: 10
+            periodSeconds: 15                      
+          env:
+            - name: VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: propmap
+                  key: VERSION
+            - name: LOGLEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: propmap
+                  key: LOGLEVEL                  
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: propmap
+                  key: PORT                                    
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+              readOnly: true            
+      volumes:
+        - name: config-volume
+          configMap:
+            name: propmap
+---
+#create service for httpserver
+apiVersion: v1
+kind: Service
+metadata:
+  name: myhttpserver-svc
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9095
+      targetPort: 9090
+      protocol: TCP
+      name: http     
+  selector:
+    app: myhttpserver
+---
+#create secret for certificate used for ingress
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myhttpserver-tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURSVENDQWkyZ0F3SUJBZ0lVWWhMd242ZnR1ajlwSVZ0UDFlWG9EZnE3YUJRd0RRWUpLb1pJaHZjTkFRRUwKQlFBd01qRVpNQmNHQTFVRUF3d1FiWGxvZEhSd2MyVnlkbVZ5TG1OdmJURVZNQk1HQTFVRUNnd01iWGxvZEhSdwpjMlZ5ZG1WeU1CNFhEVEl4TVRFeU5qQTJNVFUwT1ZvWERUSXlNVEV5TmpBMk1UVTBPVm93TWpFWk1CY0dBMVVFCkF3d1FiWGxvZEhSd2MyVnlkbVZ5TG1OdmJURVZNQk1HQTFVRUNnd01iWGxvZEhSd2MyVnlkbVZ5TUlJQklqQU4KQmdrcWhraUc5dzBCQVFFRkFBT0NBUThBTUlJQkNnS0NBUUVBei9sb0U1UGlxbUUwM0RpbGw2bWJHUDJacVFWUApHeCtPcWNLcUQyMG1jRFgrUXhCeW9pbmFzZ2hnaW9JMnJIa1B1SzBPNkVQczZZblExSHZGbTV5QTYzbGgwZ3lKCmVzdGVKNDVUSWQyYzRjSWlqYy9VU3l0M0loQkt4M2JheThaeDRESURSam9rL1pwTEJJV0t2RFNvUksxMmZpQlIKR0NWdnhjZ2xBTFl1cENTZlY0RVVpUk5vNXI5M1FsSTBDVkQraHJTaVZOajkyaWFhQkI4MDE1U1hLOWxSZ2R2awpRY2I4Y2VVTHpNR0NPYmllQ1hzMzJaL0Z0Wkdld1JycVF3RTF0N3VzZnZNdURFd3U2S3AvdTZrRmszaS9FUU1UCm8ybU51aXh1eWVlQ291U2w3SVNMT050d3AxMjVzVkxqb3E4RTZjb29qOTlkM1RJWjFsTXNObUhicVFJREFRQUIKbzFNd1VUQWRCZ05WSFE0RUZnUVViOExWSEhIeUlJNEluMGhZYlJ5bjlCeHByTWd3SHdZRFZSMGpCQmd3Rm9BVQpiOExWSEhIeUlJNEluMGhZYlJ5bjlCeHByTWd3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFOQmdrcWhraUc5dzBCCkFRc0ZBQU9DQVFFQUorYlRZWFR0V0x1WlBnbDZpSStDaHRKQURVYkYvL1U4LzcrK2tpc1pPTTdiNnBweTVBN1YKeisrZVhCRGEzVitZNXVKcUl0SWFKemF5OXA1ZWE5VzRQZE8vSjBzc0p4TWZ1NmJVUm5JS21kZlZCeGpsL285ZApBZndnU2t6L3lrL0wwM2t4aU5UUDhTeStuUW5vc1ZjV1R6MFIzSDdTb2FkYXRKRG1FQ1k3MCtrV1BoTG5STjhOCm0xait5bEhzVFJIUGk1dGJRSnZDS080a3FMSkx0SmdFSXZvWVZWcVEranhxd3BwYXh4Z3ZyWVYxWkZ5blZSRmsKeTFEaUtzaUtlSUJVNC9qTk4rLzBYMG9BT2Zab3JIL3Znd0x1NU5tbERsR0dRU2ZXKzFZWHhVS2owd2loV3BkMApTdDZkT1NNZm5DZVhkWUw2Ti9kNkFIQ1F5V0gyUmR4SCt3PT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRRFArV2dUaytLcVlUVGMKT0tXWHFac1kvWm1wQlU4Ykg0NnB3cW9QYlNad05mNURFSEtpS2RxeUNHQ0tnamFzZVErNHJRN29RK3pwaWREVQplOFdibklEcmVXSFNESWw2eTE0bmpsTWgzWnpod2lLTno5UkxLM2NpRUVySGR0ckx4bkhnTWdOR09pVDlta3NFCmhZcThOS2hFclhaK0lGRVlKVy9GeUNVQXRpNmtKSjlYZ1JTSkUyam12M2RDVWpRSlVQNkd0S0pVMlAzYUpwb0UKSHpUWGxKY3IyVkdCMitSQnh2eHg1UXZNd1lJNXVKNEplemZabjhXMWtaN0JHdXBEQVRXM3U2eCs4eTRNVEM3bwpxbis3cVFXVGVMOFJBeE9qYVkyNkxHN0o1NEtpNUtYc2hJczQyM0NuWGJteFV1T2lyd1RweWlpUDMxM2RNaG5XClV5dzJZZHVwQWdNQkFBRUNnZ0VCQUtrTXF1dVcvdHpOYk9GQTdtRXNEUlV3Tm5Ic0RkUVhQNmgvd2lvTjUvdTMKOTdoZHEwQmpVdy81dlRkNUJxWUZOYUZBa21oN3BoeGkyS3VPL0I0MEJacmlMSUJIam95UXVEVGcvSFAvcG1EZgpvNlN2OVhrd21JTEl5Vy8vRFhRc0Z5NU1tTnJCc29XdG9DTEp4ZTZid3Rjb1JMUGE0dkFFcGlrWE9mU3RJWlpyCmNodTZNVDN0dG5VeTBySUVheThZTlNCZkhXTW5pN0Z1R1c3UVVxcnlPdEIxWS9ROXo2cVNuZnl4ZUh5eFVvdHEKR0Fvbms3SVRzNVNqbkN4Q1ZqQTF6TDRiSHIwd0dFU2VOaHM0c0xRTzFCaGo1VGVJSEtUM2NBZEhCM3duNHhiNAovcldxamdJZzkxMHdoL1hGSk9ROUxXOE0xS0ZZZFFBYVRYMkRwWU96YlBFQ2dZRUErVE0wcEFQcG16dStaOVZHCkE5TU04RFdiUk1MM2VtVkplMm55VzNzai91em5TNGxMTzNDeHAxR3VNSE9nOWZyelo2WngxVFlCdEZmT2syVC8KN0JwUnNSZEkvek1RSmI4YlA2dE95TzRxOElZYk05aEU4WldiVHpnT1RLZ1pTLzZvb1dxc1krbnduMkliRTIwYQpKanJ5RTZKdGFZTWRRdkZqQTNkZkQwd2VTTzBDZ1lFQTFhWTNqTGJSNkNSK1c0dzJJL0RXVkFZM2dMQWd0b0I2CjNCa0ZSdjJHU3hCNm1nMlJGbXZnTE1iQmFwTHZVQ3FwSEtDbjkzRWdzMWU5VW1DNG45Ni9GK0s5K2hWNmUrcWIKUHVaNmZwR1BJYjlpZkdPMERnZE8zSm1hUEJZWHFvWmN3VWM3MlA0ZTNDUGQyeEx2U3QzSE1JeGt5YUdHZUhsagorMVNoWk11NzhpMENnWUFnS0R4dHdkZCtZYXBEYWVFY0V6c0RNRmUxK3RiR281Vms2Sm9PdGdoQ0dENE1vRTNtCkFMZmNHSTA2MFdEKy9RQTE2dU9ibU5tRmRTTkNIL0ZxZlViM2JFTE9NNytzcjBtTDRNWk01WGNERExzcjZJZVYKQ1RJK2VjUlduZ2FOcVBJSHltVXVpM3l5aEkxcjUxTk5oYVBCWnQ5cGt6TE9kYW5LUTdndm1DbjhUUUtCZ0IrQgorTlUrck93Z1hhWWdvbWRnZ0NzNkUzdGQvaVVNQTVKcitqUkM5VWdpc1FJQkdER0hUVE10U0o3djltMExMWTkwClBmRW05TnllQnVTY01QNGF1bkhLVlp3SkNOdzNlQmVwbzgwQXFHd2dybVNMeTZUNS9PNVpsTDVodjdHOVNQYVUKQzhadmk1dUppcEZoVkhybEJCZ3J6RDFVSGVHc2ZVczJhdXJUaE84dEFvR0FOMTBpbkRpOXBoTW9DQWFpS25QTgpoYllhWURYb0R3Y0E2NmpLSkhTbXZGZytVcStWaEVERW42Y2t0SFV6K0lLWlQyS3N0QVl0ZnF4UDVQdUJ2clVEClQ0MEg2ZzhIb2pFclRxYnF4b01tSVdaTjVvMFVJZ1hSd3FPTmVaQ0g4cTJIRnFRcTVhQ3FLQlJ3cjZMQ1lhRWMKWis5RFM4TlFTZjI5Rno1MThONldZTkk9Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+type: kubernetes.io/tls
+---
+#create ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    #nginx.ingress.kubernetes.io/rewrite-target: /
+    #nginx.ingress.kubernetes.io/proxy-connect-timeout: "120"
+    #nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    #nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  tls:
+    - hosts:
+       - myhttpserver.com
+      secretName: myhttpserver-tls
+  rules:
+     - host: myhttpserver.com
+       http:
+        paths:
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: myhttpserver-svc
+                port:
+                  number: 9095
